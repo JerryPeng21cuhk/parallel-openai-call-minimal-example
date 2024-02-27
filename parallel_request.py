@@ -287,7 +287,7 @@ class APIRequest:
 def append_to_jsonl(data, filename: str) -> None:
     """Append a json payload to the end of a jsonl file."""
     json_string = json.dumps(data)
-    with open(filename, "w") as f:
+    with open(filename, "a") as f:
         f.write(json_string + "\n")
 
 
@@ -384,6 +384,9 @@ def cli(input_filepath,
     """
     if output_filepath is None:
         output_filepath = input_filepath.replace(".jsonl", "_results.jsonl")
+    # empty the output file
+    with open(output_filepath, 'w'):
+        pass
 
     # run script
     asyncio.run(
