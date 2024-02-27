@@ -1,4 +1,3 @@
-
 import aiohttp  # for making API calls concurrently
 import argparse  # for running script from command line
 import asyncio  # for running API calls concurrently
@@ -17,8 +16,8 @@ import click
 
 
 # request for my proxy server
-async def llm(messages, base_url, api_key, model):
-    resp = requests.post(
+async def llm(session, messages, base_url, api_key, model):
+    async with session.post(
         f"{base_url}/chat/completions",
         headers={
             "Content-Type": "application/json",
@@ -28,8 +27,13 @@ async def llm(messages, base_url, api_key, model):
             "model": model,
             "messages": messages,
         }
-    )
-    return resp.json()
+    ) as response:
+        response = await response.json()
+    # async with session.post(
+    #             url=request_url, headers=request_header, json=self.request_json
+    #         ) as response:
+    #             response = await response.json()
+    return response
 
 
 async def process_api_requests_from_file(
@@ -234,7 +238,7 @@ class APIRequest:
         try:
             # async with llm(self.messages) as response:
             #     response = await response.json()
-            response = await llm(self.messages, self.base_url, self.api_key, self.model)
+            response = await llm(session, self.messages, self.base_url, self.api_key, self.model)
             # TODO
             if "error" in response:
                 logging.warning(
