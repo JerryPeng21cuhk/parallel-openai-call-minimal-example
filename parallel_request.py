@@ -362,14 +362,29 @@ def task_id_generator_function():
         task_id += 1
 
 
+token_capacities = {
+    'gpt-3.5-turbo': 300_000,
+    'gpt-3.5-turbo-16k': 300_000,
+    'gpt4-1106-preview': 80_000,
+    'text-embedding-ada-002': 300_000,
+}
+
+request_capacities = {
+    'gpt-3.5-turbo': 1800,
+    'gpt-3.5-turbo-16k': 1800,
+    'gpt4-1106-preview': 480,
+    'text-embedding-ada-002': 1800,
+}
+
+
 @click.command()
 @click.argument("input_filepath", type=str)
 @click.argument("output_filepath", type=str, default=None, required=False)
 @click.option("--base_url", type=str, default="https://drchat.xyz")
 @click.option("--api_key", type=str, default=os.getenv("OPENAI_API_KEY", None))
 @click.option("--model", type=str, default="gpt4-1106-preview")
-@click.option("--max_requests_per_minute", type=int, default=60 * 0.5)
-@click.option("--max_tokens_per_minute", type=int, default=10_000 * 0.5)
+@click.option("--max_requests_per_minute", type=int, default=720 * 0.5)
+@click.option("--max_tokens_per_minute", type=int, default=300_000 * 0.5)
 @click.option("--token_encoding_name", type=str, default="cl100k_base")
 @click.option("--max_attempts", type=int, default=5)
 @click.option("--logging_level", default=logging.INFO)
@@ -386,6 +401,8 @@ def cli(input_filepath,
     """This script processes in parallel a jsonl file that has each line of json input messages to LLM.
     It returns another jsonl file that stores each line of json output response from LLM.
     """
+    max_requests_per_minute = min(max_requests_per_minute, 0.5 * request_capacities[model])
+    max_tokens_per_minute = min(max_tokens_per_minute, 0.5 * token_capacities[model])
     if output_filepath is None:
         output_filepath = input_filepath.replace(".jsonl", "_results.jsonl")
     # empty the output file
