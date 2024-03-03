@@ -15,6 +15,34 @@ from dataclasses import (
 import click
 
 
+MODELS = {
+    'gpt-3.5-turbo': "chat/completions",
+    'gpt-3.5-turbo-16k': "chat/completions",
+    'gpt4-1106-preview': "chat/completions",
+    'text-embedding-ada-002': "embeddings",
+    'text-embedding-3-large': "embeddings",
+    'text-embedding-3-small': "embeddings",
+}
+
+token_capacities = {
+    'gpt-3.5-turbo': 300_000,
+    'gpt-3.5-turbo-16k': 300_000,
+    'gpt4-1106-preview': 80_000,
+    'text-embedding-ada-002': 300_000,
+    'text-embedding-3-large': 350_000,
+    'text-embedding-3-small': 350_000,
+}
+
+request_capacities = {
+    'gpt-3.5-turbo': 1800,
+    'gpt-3.5-turbo-16k': 1800,
+    'gpt4-1106-preview': 480,
+    'text-embedding-ada-002': 1800,
+    'text-embedding-3-large': 2100,
+    'text-embedding-3-small': 2100,
+}
+
+
 # request for my proxy server
 async def llm(session, messages, base_url, api_key, model):
     async with session.post(
@@ -29,11 +57,42 @@ async def llm(session, messages, base_url, api_key, model):
         }
     ) as response:
         response = await response.json()
-    # async with session.post(
-    #             url=request_url, headers=request_header, json=self.request_json
-    #         ) as response:
-    #             response = await response.json()
     return response
+
+
+# request for my proxy server
+async def embedding(session, text, base_url, api_key, model):
+    async with session.post(
+        f"{base_url}/embeddings",
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+        },
+        json={
+            "model": model,
+            "input": text,
+        }
+    ) as response:
+        response = await response.json()
+    return response
+
+
+def run_model(session, input, base_url, api_key, model):
+    assert model in MODELS, f"Unexpected model: {model}"
+    if MODELS[model] == 'chat/completions':
+        return llm(session, input, base_url, api_key, model)
+    elif MODELS[model] == 'embeddings':
+        return embedding(session, input, base_url, api_key, model)
+    else:
+        raise NotImplementedError(f"Model: {model} doesn't support!")
+
+
+def decode_response(response, model):
+    if MODELS[model] == 'chat/completions':
+        return response['choices'][0]['message']['content']
+    elif MODELS[model] == 'embeddings':
+        return response['data'][0]['embedding']
+    raise ValueError(f"Unknown model type: {model}")
 
 
 async def process_api_requests_from_file(
@@ -103,7 +162,9 @@ async def process_api_requests_from_file(
                                 model=model,
                                 messages=messages,
                                 token_consumption=num_tokens_consumed_from_request(
-                                    messages, "chat/completions", token_encoding_name
+                                    messages,
+                                    MODELS[model],
+                                    token_encoding_name
                                 ),
                                 attempts_left=max_attempts,
                                 metadata=None,
@@ -236,10 +297,7 @@ class APIRequest:
         logging.info(f"Starting request #{self.task_id}")
         error = None
         try:
-            # async with llm(self.messages) as response:
-            #     response = await response.json()
-            response = await llm(session, self.messages, self.base_url, self.api_key, self.model)
-            # TODO
+            response = await run_model(session, self.messages, self.base_url, self.api_key, self.model)
             if "error" in response:
                 logging.warning(
                     f"Request {self.task_id} failed with error {response['error']}"
@@ -276,10 +334,11 @@ class APIRequest:
                 status_tracker.num_tasks_in_progress -= 1
                 status_tracker.num_tasks_failed += 1
         else:
+            content = decode_response(response, self.model)
             data = (
-                [self.task_id, response['choices'][0]['message']['content'], self.metadata]
+                [self.task_id, content, self.metadata]
                 if self.metadata
-                else [self.task_id, response['choices'][0]['message']['content']]
+                else [self.task_id, content]
             )
             append_to_jsonl(data, save_filepath)
             status_tracker.num_tasks_in_progress -= 1
@@ -336,7 +395,7 @@ def num_tokens_consumed_from_request(
                 )
     # if embeddings request, tokens = input tokens
     elif api_endpoint == "embeddings":
-        input = request_json["input"]
+        input = request_json  # ["input"]
         if isinstance(input, str):  # single input
             num_tokens = len(encoding.encode(input))
             return num_tokens
@@ -360,21 +419,6 @@ def task_id_generator_function():
     while True:
         yield task_id
         task_id += 1
-
-
-token_capacities = {
-    'gpt-3.5-turbo': 300_000,
-    'gpt-3.5-turbo-16k': 300_000,
-    'gpt4-1106-preview': 80_000,
-    'text-embedding-ada-002': 300_000,
-}
-
-request_capacities = {
-    'gpt-3.5-turbo': 1800,
-    'gpt-3.5-turbo-16k': 1800,
-    'gpt4-1106-preview': 480,
-    'text-embedding-ada-002': 1800,
-}
 
 
 @click.command()
